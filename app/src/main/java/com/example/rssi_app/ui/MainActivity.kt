@@ -30,7 +30,6 @@ import com.example.rssi_app.data.WifiDetails
 import com.example.rssi_app.data.WifiDetailsService
 import com.example.rssi_app.service.WifiDetailsRepo
 import com.example.rssi_app.service.WifiDetailsWorker
-import com.example.rssi_app.service.WifiWorkerHelper.Companion.CODE_LOCATION_PERMISSION
 import com.example.rssi_app.ui.theme.RssiappTheme
 import com.example.rssi_app.vireModel.WifiViewModel
 import com.google.gson.GsonBuilder
@@ -44,19 +43,22 @@ import java.util.concurrent.TimeUnit
 class MainActivity : ComponentActivity(), EasyPermissions.PermissionCallbacks {
     private val viewModel: WifiViewModel by viewModels()
 
-    private val requestPermission = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) {
-        if (it) {
-
-        } else {
-
+    private val requestPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+        val rejectedPermissions = permissions.entries.all {
+            !it.value
+        }
+        if (!rejectedPermissions) {
+            requestPermission()
         }
     }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         workManager(applicationContext)
+
         requestPermission()
+
         if (hasPermission()) viewModel.uploadWifiInfo()
 
         setContent {
@@ -94,7 +96,6 @@ class MainActivity : ComponentActivity(), EasyPermissions.PermissionCallbacks {
                     .setRequiredNetworkType(NetworkType.CONNECTED)
                     .build()
             )
-            .setInitialDelay(1, TimeUnit.MINUTES)
             .addTag("rssiWorker")
             .build()
 
@@ -105,31 +106,18 @@ class MainActivity : ComponentActivity(), EasyPermissions.PermissionCallbacks {
         )
     }
 
-    private fun requestPermission() {
-        if (hasPermission()) {
-            return
-        } else {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                EasyPermissions.requestPermissions(
-                    this,
-                    "Please grant all requested permissions and chose allow all the time for the app to send background location",
-                    CODE_LOCATION_PERMISSION,
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                    Manifest.permission.ACCESS_BACKGROUND_LOCATION,
-                    Manifest.permission.POST_NOTIFICATIONS
-                )
-            } else {
-                EasyPermissions.requestPermissions(
-                    this,
-                    "Please grant location permission and chose allow all the time for the app to send background location",
-                    CODE_LOCATION_PERMISSION,
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                    Manifest.permission.ACCESS_BACKGROUND_LOCATION
-                )
-            }
+    private fun requestPermission(): Unit = requestPermission.launch(requiredPermissions())
+
+    private fun requiredPermissions(): Array<String> {
+        val requiredPermissions = arrayListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requiredPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
+        return requiredPermissions.toTypedArray()
     }
 
     private fun hasPermission(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
