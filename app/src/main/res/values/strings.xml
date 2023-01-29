@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">rssi-app</string>
+    <string name="notification_channel_id">notification channel</string>
+    <string name="notification_title">title</string>
+    <string name="cancel">cancel</string>
+    <string name="error">error</string>
+    <string name="all_permission_required">All permissions need to be granted</string>
+    <string name="background_location_permission_message">Please note you need go to permissions and select location and chose Allow all the time for the app to send background location</string>
+
+</resources>
