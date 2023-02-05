@@ -21,18 +21,10 @@ import kotlinx.coroutines.flow.*
 
 class WifiWorkerHelper(val context: Context) {
     var wifiDetails: Flow<Result<DeviceInformation>> = object : Flow<Result<DeviceInformation>> {
-        override suspend fun collect(collector: FlowCollector<Result<DeviceInformation>>) {
-
-        }
+        override suspend fun collect(collector: FlowCollector<Result<DeviceInformation>>) {}
     }
 
     fun getWifiInfo() {
-        wifiDetails = object : Flow<Result<DeviceInformation>> {
-            override suspend fun collect(collector: FlowCollector<Result<DeviceInformation>>) {
-
-            }
-        }
-
         val request = NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .build()
@@ -67,8 +59,6 @@ class WifiWorkerHelper(val context: Context) {
         val title = context.getString(R.string.notification_title)
         val cancel = context.getString(R.string.cancel)
 
-        createChannel()
-
         val notificationIntent = Intent(context, MainActivity::class.java)
         notificationIntent.putExtra(EXTRA_KEY, "todo")
         notificationIntent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -85,19 +75,6 @@ class WifiWorkerHelper(val context: Context) {
 
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(NOTIFICATION_ID, notification)
-    }
-
-    private fun createChannel() {
-        val notificationChannel = NotificationChannel(
-            CHANNEL_ID,
-            "Notification",
-            NotificationManager.IMPORTANCE_DEFAULT
-        )
-        notificationChannel.description = "Description for network notification "
-
-        val notificationManager =
-            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.createNotificationChannel(notificationChannel)
     }
 
     companion object {

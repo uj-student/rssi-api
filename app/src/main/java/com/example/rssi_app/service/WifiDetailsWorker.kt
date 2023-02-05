@@ -9,12 +9,11 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
 @HiltWorker
-class WifiDetailsWorker@AssistedInject constructor(@Assisted val context: Context,  @dagger.assisted.Assisted params: WorkerParameters) : CoroutineWorker(context, params) {
-    private val rssi = WifiWorkerHelper(context)
+class WifiDetailsWorker@AssistedInject constructor(@Assisted val context: Context,  @Assisted params: WorkerParameters) : CoroutineWorker(context, params) {
 
     @SuppressLint("HardwareIds", "WifiManagerPotentialLeak")
     override suspend fun doWork(): Result {
-        rssi.getWifiInfo()
+        WifiWorkerHelper(context).getWifiInfo()
         return Result.success()
     }
 }

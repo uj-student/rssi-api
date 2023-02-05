@@ -1,11 +1,17 @@
 package com.example.rssi_app.ui
 
 import android.Manifest
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -22,6 +28,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.work.*
 import com.example.rssi_app.R
 import com.example.rssi_app.data.DeviceInformation
@@ -30,8 +39,11 @@ import com.example.rssi_app.data.WifiDetails
 import com.example.rssi_app.data.WifiDetailsService
 import com.example.rssi_app.service.WifiDetailsRepo
 import com.example.rssi_app.service.WifiDetailsWorker
+import com.example.rssi_app.service.WifiWorkerHelper
 import com.example.rssi_app.ui.theme.RssiappTheme
 import com.example.rssi_app.vireModel.WifiViewModel
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.google.gson.GsonBuilder
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -40,53 +52,62 @@ import pub.devrel.easypermissions.EasyPermissions
 import java.util.concurrent.TimeUnit
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity(), EasyPermissions.PermissionCallbacks {
+class MainActivity : ComponentActivity() { //}, EasyPermissions.PermissionCallbacks {
     private val viewModel: WifiViewModel by viewModels()
 
-    private val requestPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-        val rejectedPermissions = permissions.entries.all {
-            !it.value
-        }
-        if (!rejectedPermissions) {
-            requestPermission()
-        }
-    }
-
+    @OptIn(ExperimentalPermissionsApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        workManager(applicationContext)
-
-        requestPermission()
-
-        if (hasPermission()) viewModel.uploadWifiInfo()
+//        if (hasPermission()) viewModel.uploadWifiInfo()
 
         setContent {
             RssiappTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colors.background) {
-                    HomeScreen(viewModel, { hasPermission() }) { requestPermission() }
+                    var hasNotificationPermission by remember {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            mutableStateOf(ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+                        } else {
+                            mutableStateOf(false)
+                        }
+                    }
+
+                    val permissionLauncher = rememberMultiplePermissionsState(
+                        requiredPermissions().toList()
+                    ) { permissionResult ->
+                        hasNotificationPermission = permissionResult.any { it.value }
+                        if (!hasNotificationPermission) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+                                    || shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)
+                                    || shouldShowRequestPermissionRationale(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+                                ) {
+                                    AppSettingsDialog.Builder(this).setThemeResId(androidx.appcompat.R.style.AlertDialog_AppCompat).build().show()
+                                }
+                            }
+                        }
+                    }
+
+                    if (hasNotificationPermission && isLocationEnabled()) {
+                        workManager(applicationContext)
+                        HomeScreen(viewModel, hasNotificationPermission)
+                    } else {
+                        Button(
+                            modifier = Modifier
+                                .wrapContentHeight()
+                                .wrapContentWidth(),
+                            onClick = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    permissionLauncher.launchMultiplePermissionRequest()
+                                }
+                            }) {
+                            Text("Grant Permissions")
+
+                        }
+                    }
                 }
             }
         }
-    }
-
-    override fun onPermissionsGranted(requestCode: Int, perms: MutableList<String>) {}
-
-    override fun onPermissionsDenied(requestCode: Int, perms: MutableList<String>) {
-        if (EasyPermissions.somePermissionPermanentlyDenied(this, perms)) {
-            AppSettingsDialog.Builder(this).setThemeResId(R.style.AlertDialogTheme).build().show()
-        } else {
-            requestPermission()
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        EasyPermissions.onRequestPermissionsResult(requestCode, permissions, grantResults, this)
     }
 
     private fun workManager(context: Context) {
@@ -106,13 +127,10 @@ class MainActivity : ComponentActivity(), EasyPermissions.PermissionCallbacks {
         )
     }
 
-    private fun requestPermission(): Unit = requestPermission.launch(requiredPermissions())
-
     private fun requiredPermissions(): Array<String> {
         val requiredPermissions = arrayListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            Manifest.permission.ACCESS_COARSE_LOCATION
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requiredPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -120,35 +138,19 @@ class MainActivity : ComponentActivity(), EasyPermissions.PermissionCallbacks {
         return requiredPermissions.toTypedArray()
     }
 
-    private fun hasPermission(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        EasyPermissions.hasPermissions(
-            applicationContext,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION,
-            Manifest.permission.POST_NOTIFICATIONS
-        ) && isLocationEnabled()
-    } else {
-        EasyPermissions.hasPermissions(
-            applicationContext,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION
-        ) && isLocationEnabled()
-    }
-
     private fun isLocationEnabled(): Boolean {
-        val locationManager: LocationManager = applicationContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val locationManager: LocationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) || locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
     }
 }
 
 @Composable
-fun HomeScreen(viewModel: WifiViewModel, hasPermission: () -> Boolean, requestPermission: () -> Unit) {
+fun HomeScreen(viewModel: WifiViewModel, hasPermission: Boolean) {
     val showProgress = remember { mutableStateOf(false) }
     val prettyJson = remember { mutableStateOf("") }
     val isResponseEmpty = remember { mutableStateOf(true) }
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     Column(verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         if (prettyJson.value.isNotEmpty()) {
@@ -160,10 +162,10 @@ fun HomeScreen(viewModel: WifiViewModel, hasPermission: () -> Boolean, requestPe
                 .wrapContentHeight()
                 .wrapContentWidth(),
             onClick = {
-                if (!hasPermission.invoke()) {
-                    requestPermission.invoke()
-                } else {
+                if (hasPermission) {
                     viewModel.uploadWifiInfo()
+                } else {
+                    Toast.makeText(context, "Please enable permissions and restart app", Toast.LENGTH_LONG).show()
                 }
             }) {
             Text(text = if (prettyJson.value.isEmpty()) "Run Scan" else "Run Scan Again")
@@ -233,6 +235,7 @@ fun DefaultPreview() {
                     }),
                     LocalContext.current
                 ),
-            ), { true }) {}
+            ), true
+        )
     }
 }
